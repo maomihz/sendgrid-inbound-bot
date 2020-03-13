@@ -1,6 +1,7 @@
-const { telegram, chat } = require('../config/config')
-
 const moment = require('moment');
+
+const bot = require('../telegram/bot');
+const config = require('../config/config');
 
 module.exports = (req, res, next) => {
     let fields = req.body;
@@ -15,11 +16,12 @@ module.exports = (req, res, next) => {
 
     res.render('message.ejs', { email: fields }, (err, str) => {
         if (err) {
+            console.error(err);
             next('error');
             return;
         }
 
-        telegram.sendDocument(chat, {
+        bot.telegram.sendDocument(config.chat, {
             source: Buffer.from(fields.email),
             filename
         }, {

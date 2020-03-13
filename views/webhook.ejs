@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>Set Webhook</title>
+</head>
+<body>
+    <h1>Set Webhook</h1>
+    <form action="" method="post">
+        <label>URL</label>
+        <input class="webhook-input" name="webhook" id="webhook-input" type="text">
+        <label>Bot Token</label>
+        <input class="webhook-input" name="token" type="text">
+        <input class="webhook-submit" type="submit" value="Submit">
+    </form>
+    <script>
+        document.getElementById('webhook-input').value = window.location.href;
+    </script>
+</body>
+</html>

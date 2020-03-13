@@ -12,5 +12,6 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api', require('./inbound/router'));
+app.use('/api', require('./telegram/router'));
 
 module.exports = app;
