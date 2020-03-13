@@ -1,0 +1,8 @@
+<b>To: <%= email.to %></b>
+<b>From: </b><%= email.from %>
+<% if (email.cc) { -%>
+<b>Cc: </b><%= email.cc %>
+<% } -%>
+<% if (email.subject) { -%>
+<b>Subject: </b><%= email.subject %>
+<% } -%>

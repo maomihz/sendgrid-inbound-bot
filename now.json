@@ -1,0 +1,13 @@
+{
+    "version": 2,
+    "builds": [
+        { "src": "*.js", "use": "@now/node" }
+    ],
+    "env": {
+        "TOKEN": "@bot-token",
+        "CHAT": "@bot-chat"
+    },
+    "routes": [
+        { "src": "/api/.*", "dest": "index.js" }
+    ]
+}
