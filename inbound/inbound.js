@@ -16,9 +16,7 @@ module.exports = (req, res, next) => {
 
     res.render('message.ejs', { email: fields }, (err, str) => {
         if (err) {
-            console.error(err);
-            next('error');
-            return;
+            throw err;
         }
 
         bot.telegram.sendDocument(config.chat, {

@@ -8,7 +8,9 @@ class MyContext extends Telegraf.Context {
 
     replyWithTemplate(template, extra) {
         this.telegram.response.render(template, (err, str) => {
-            if (!err) {
+            if (err) {
+                throw err;
+            } else {
                 this.reply(str, {
                     parse_mode: 'HTML',
                     disable_web_page_preview: true,
