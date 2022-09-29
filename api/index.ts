@@ -34,8 +34,8 @@ router.post('/api/inbound/:chat_id', multer().fields([]), async (ctx) => {
         return;
     }
 
-    let receiver = fields.to.split(/,\s*/)[0];
-    let filename = `sendgrid_${dayjs().format('YYYYMMDDhhmmss')}_${receiver}.eml`;
+    let datetime = dayjs().format('YYYYMMDDhhmmss');
+    let filename = `sendgrid_${datetime}.eml`;
 
     await bot.telegram.sendDocument(chat_id, {
         source: Buffer.from(fields.email),
