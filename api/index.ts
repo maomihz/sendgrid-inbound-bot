@@ -1,11 +1,11 @@
-import * as Koa from 'koa';
-import * as Router from '@koa/router'
-import * as multer from '@koa/multer'
-import * as json from 'koa-json'
-import * as dayjs from 'dayjs'
-import * as pug from 'pug'
+import Koa from 'koa';
+import Router from '@koa/router'
+import multer from '@koa/multer'
+import json from 'koa-json'
+import dayjs from 'dayjs';
+import pug from 'pug';
 
-import {Telegraf} from 'telegraf';
+import { Telegraf } from 'telegraf';
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const port = parseInt(process.env.PORT) || 3000;
@@ -15,7 +15,7 @@ const app = new Koa();
 const router = new Router();
 const caption = pug.compileFile(__dirname + '/views/caption.pug');
 
-router.get('/', async (ctx) => {
+router.get('/api/hello', async (ctx) => {
     ctx.body = {
         'message': 'hello, world'
     }
