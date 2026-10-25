@@ -51,6 +51,63 @@ function buildInboundMultipartRequest(
 }
 
 describe('SendGrid Inbound Telegram Webhook', () => {
+  it('renders the status dashboard on GET / and returns telemetry on GET /api/status without leaking secrets', async () => {
+    const { fetchStub } = createFakeTelegramFetch(200);
+    const fixedTimestamp = new Date('2026-10-25T14:30:45.000Z');
+    const secretToken = '000000000:TEST_BOT_TOKEN_PLACEHOLDER';
+    const secretChatId = '-100999888777';
+
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: secretToken,
+        CHAT_ID: secretChatId,
+      },
+      fetchImplementation: fetchStub,
+      currentTimestampProvider: () => fixedTimestamp,
+    });
+
+    const validRequest = buildInboundMultipartRequest('/api/inbound', {
+      from: 'sender@example.com',
+      to: 'recipient@example.com',
+      subject: 'Status Check',
+      email: 'Raw MIME content',
+    });
+    await app.request(validRequest);
+
+    const invalidRequest = buildInboundMultipartRequest('/api/inbound', {
+      from: 'sender@example.com',
+    });
+    await app.request(invalidRequest);
+
+    const statusResponse = await app.request('/api/status');
+    expect(statusResponse.status).toBe(200);
+    const telemetry = await statusResponse.json();
+    expect(telemetry).toEqual({
+      status: 'operational',
+      botTokenConfigured: true,
+      defaultChatIdConfigured: true,
+      instanceStartedAt: '2026-10-25T14:30:45.000Z',
+      lastDeliveryAt: '2026-10-25T14:30:45.000Z',
+      counters: {
+        receivedRequests: 2,
+        deliveredEmails: 1,
+        failedDeliveries: 0,
+        rejectedRequests: 1,
+      },
+    });
+
+    const dashboardResponse = await app.request('/');
+    expect(dashboardResponse.status).toBe(200);
+    expect(dashboardResponse.headers.get('content-type')).toContain('text/html');
+
+    const htmlBody = await dashboardResponse.text();
+    expect(htmlBody).toContain('SendGrid Inbound Telegram Bot');
+    expect(htmlBody).toContain('Operational');
+    expect(htmlBody).toContain('2026-10-25T14:30:45.000Z');
+    expect(htmlBody).not.toContain(secretToken);
+    expect(htmlBody).not.toContain(secretChatId);
+  });
+
   it('responds with greeting on GET /api/hello', async () => {
     const app = createInboundWebhookApp();
     const response = await app.request('/api/hello');
