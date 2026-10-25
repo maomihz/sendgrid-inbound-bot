@@ -1,27 +1,33 @@
-# Vanilla Example
+# SendGrid Inbound Telegram Bot
 
-This directory is a brief example of a vanilla site that can be deployed with ZEIT Now and zero configuration.
+Serverless webhook built with [Hono](https://hono.dev/) for [Vercel Functions](https://vercel.com/docs/functions) that receives incoming emails from [SendGrid Inbound Parse](https://www.twilio.com/docs/sendgrid/for-developers/parsing-email/setting-up-the-inbound-parse-webhook) and forwards them to a Telegram chat as `.eml` attachments.
 
-## Deploy Your Own
+## Endpoints
 
-Deploy your own vanilla website, along with Serverless Functions, with ZEIT Now.
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/hello` | Health check endpoint returning `{ "message": "hello, world" }`. |
+| `POST` | `/api/inbound` | Receives SendGrid `multipart/form-data` payloads and delivers the raw `.eml` message to `CHAT_ID`. |
+| `POST` | `/api/inbound/:chat_id` | Receives SendGrid `multipart/form-data` payloads and delivers the raw `.eml` message to the specified `:chat_id`. |
 
-[![Deploy with ZEIT Now](https://zeit.co/button)](https://zeit.co/new/project?template=https://github.com/zeit/now/tree/master/examples/vanilla)
+## Configuration
 
-_Live Example: https://vanilla.now-examples.now.sh_
+Configure the following environment variables in Vercel:
 
-### How We Created This Example
+- `BOT_TOKEN` (required): Telegram Bot API token issued by `@BotFather`.
+- `CHAT_ID` (optional if `:chat_id` is provided in the webhook URL): Default target Telegram chat ID (e.g. `123456789`, `-1001234567890`, or `@channel_handle`).
 
-To get started with a vanilla website, along with [Serverless Functions](https://zeit.co/docs/v2/serverless-functions/introduction), with ZEIT Now, you can use the [Now CLI](https://zeit.co/download) to initialize the project:
+### SendGrid Inbound Parse Setup
 
-```shell
-$ now init vanilla
-```
+1. Point your domain's `MX` record to `mx.sendgrid.net`.
+2. In the SendGrid Dashboard under **Settings -> Inbound Parse**, add a host & URL pointing to:
+   - `https://<your-deployment-domain>/api/inbound/<chat_id>` (or `/api/inbound` to use the default `CHAT_ID`).
+3. Enable **POST the raw, full MIME message** so SendGrid includes the `email` field containing the full `.eml` source.
 
-### Deploying From Your Terminal
+## Development
 
-You can deploy your new vanilla website, along with [Serverless Functions](https://zeit.co/docs/v2/serverless-functions/introduction), with a single command from your terminal using [Now CLI](https://zeit.co/download):
-
-```shell
-$ now
+```bash
+npm install
+npm run typecheck
+npm test
 ```
