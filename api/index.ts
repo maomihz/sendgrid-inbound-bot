@@ -1,5 +1,3 @@
-import { createInboundWebhookApp } from '../src/app.js';
-
-const app = createInboundWebhookApp();
+import app from '../src/app.js';
 
 export default app;

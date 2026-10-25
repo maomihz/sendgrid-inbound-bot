@@ -101,6 +101,10 @@ describe('SendGrid Inbound Telegram Webhook', () => {
     expect(dashboardResponse.status).toBe(200);
     expect(dashboardResponse.headers.get('content-type')).toContain('text/html');
 
+    const apiRootDashboardResponse = await app.request('/api');
+    expect(apiRootDashboardResponse.status).toBe(200);
+    expect(apiRootDashboardResponse.headers.get('content-type')).toContain('text/html');
+
     const htmlBody = await dashboardResponse.text();
     expect(htmlBody).toContain('SendGrid Inbound Telegram Bot');
     expect(htmlBody).toContain('Operational');

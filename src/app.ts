@@ -112,10 +112,13 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
     return context.json({ status: 'ok' }, 200);
   };
 
-  application.get('/', (context) => {
+  const renderDashboardResponse = (context: Context): Response => {
     const telemetry = buildTelemetrySnapshot();
     return context.html(renderStatusDashboardHtml(telemetry), 200);
-  });
+  };
+
+  application.get('/', renderDashboardResponse);
+  application.get('/api', renderDashboardResponse);
 
   application.get('/api/status', (context) => {
     return context.json(buildTelemetrySnapshot(), 200);
@@ -130,3 +133,7 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
 
   return application;
 }
+
+const app = createInboundWebhookApp();
+
+export default app;
