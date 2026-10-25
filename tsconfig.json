@@ -1,16 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["./api/**/*", "./test/**/*"]
+  "include": ["./api/**/*", "./src/**/*", "./test/**/*"]
 }

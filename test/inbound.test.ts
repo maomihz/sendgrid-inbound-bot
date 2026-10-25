@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import defaultApp from '../api/index.js';
+import { createInboundWebhookApp } from '../src/app.js';
 import {
-  createInboundWebhookApp,
   escapeAndTruncateTelegramHtml,
   escapeTelegramHtml,
   formatArchiveFilename,
   formatTelegramCaptionHtml,
-} from '../api/index.ts';
+} from '../src/telegram.js';
 
 interface CapturedTelegramRequest {
   readonly url: string;
@@ -108,9 +109,8 @@ describe('SendGrid Inbound Telegram Webhook', () => {
     expect(htmlBody).not.toContain(secretChatId);
   });
 
-  it('responds with greeting on GET /api/hello', async () => {
-    const app = createInboundWebhookApp();
-    const response = await app.request('/api/hello');
+  it('responds with greeting on GET /api/hello via the Vercel entrypoint', async () => {
+    const response = await defaultApp.request('/api/hello');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ message: 'hello, world' });
