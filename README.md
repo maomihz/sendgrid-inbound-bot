@@ -6,9 +6,9 @@ Serverless webhook built with [Hono](https://hono.dev/) for [Vercel Functions](h
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/` | Status dashboard displaying service health, configuration readiness, and delivery stats. |
-| `GET` | `/api/status` | JSON telemetry snapshot (`status`, configuration flags, and delivery counters). |
-| `GET` | `/api/hello` | Health probe returning `{ "message": "hello, world" }`. |
+| `GET` | `/` | Minimal landing page confirming the service is online. |
+| `GET` | `/api/status` | JSON health check confirming configuration status. |
+| `GET` | `/api/hello` | Simple health probe returning `{ "message": "hello, world" }`. |
 | `POST` | `/api/inbound` | Receives SendGrid `multipart/form-data` payloads and delivers the raw `.eml` message to `CHAT_ID`. |
 | `POST` | `/api/inbound/:chat_id` | Receives SendGrid `multipart/form-data` payloads and delivers the raw `.eml` message to the specified `:chat_id`. |
 
