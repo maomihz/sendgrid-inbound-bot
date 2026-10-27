@@ -107,3 +107,111 @@ export async function deliverEmailDocumentToTelegram(options: {
     return false;
   }
 }
+
+export const TELEGRAM_BOT_COMMAND_RESPONSES = {
+  START: 'Welcome! SendGrid Inbound Bot is active and ready.',
+  HELP: 'Available commands:\n/start - Verify bot connectivity\n/help - View available commands\n/hello - Receive a greeting',
+  HELLO: 'Hello! The bot is operational.',
+} as const;
+
+export function resolveBotCommandResponse(rawText: string): string | null {
+  const trimmedText = rawText.trim();
+  if (!trimmedText.startsWith('/')) {
+    return null;
+  }
+
+  const firstWhitespaceIndex = trimmedText.search(/\s/);
+  const commandWithOptionalMention =
+    firstWhitespaceIndex === -1
+      ? trimmedText
+      : trimmedText.slice(0, firstWhitespaceIndex);
+
+  const commandWithoutMention = commandWithOptionalMention.split('@')[0] ?? '';
+  const normalizedCommand = commandWithoutMention.toLowerCase();
+
+  switch (normalizedCommand) {
+    case '/start':
+      return TELEGRAM_BOT_COMMAND_RESPONSES.START;
+    case '/help':
+      return TELEGRAM_BOT_COMMAND_RESPONSES.HELP;
+    case '/hello':
+      return TELEGRAM_BOT_COMMAND_RESPONSES.HELLO;
+    default:
+      return null;
+  }
+}
+
+export function parseWebhookUrl(candidateUrl: unknown): string | null {
+  if (typeof candidateUrl !== 'string') {
+    return null;
+  }
+
+  const trimmedUrl = candidateUrl.trim();
+  if (trimmedUrl.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedUrl);
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      return null;
+    }
+    return parsedUrl.href;
+  } catch {
+    return null;
+  }
+}
+
+export async function registerTelegramWebhook(options: {
+  readonly botToken: TelegramBotToken;
+  readonly webhookUrl: string;
+  readonly fetchImplementation: typeof fetch;
+}): Promise<boolean> {
+  const endpointUrl = `${TELEGRAM_API_BASE_URL}/bot${options.botToken}/setWebhook`;
+
+  try {
+    const response = await options.fetchImplementation(endpointUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: options.webhookUrl }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = (await response.json()) as { ok?: boolean };
+    return payload.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function sendTelegramTextMessage(options: {
+  readonly botToken: TelegramBotToken;
+  readonly chatId: TelegramChatId | string | number;
+  readonly text: string;
+  readonly fetchImplementation: typeof fetch;
+}): Promise<boolean> {
+  const endpointUrl = `${TELEGRAM_API_BASE_URL}/bot${options.botToken}/sendMessage`;
+
+  try {
+    const response = await options.fetchImplementation(endpointUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: options.chatId,
+        text: options.text,
+      }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = (await response.json()) as { ok?: boolean };
+    return payload.ok === true;
+  } catch {
+    return false;
+  }
+}

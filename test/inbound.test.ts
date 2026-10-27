@@ -12,6 +12,8 @@ interface CapturedTelegramRequest {
   readonly url: string;
   readonly method: string;
   readonly formData: FormData;
+  readonly bodyText?: string | undefined;
+  readonly bodyJson?: Record<string, unknown> | undefined;
 }
 
 function createFakeTelegramFetch(responseStatus = 200): {
@@ -25,7 +27,19 @@ function createFakeTelegramFetch(responseStatus = 200): {
     const method = init?.method ?? 'GET';
     const formData = init?.body instanceof FormData ? init.body : new FormData();
 
-    capturedRequests.push({ url, method, formData });
+    let bodyText: string | undefined;
+    let bodyJson: Record<string, unknown> | undefined;
+
+    if (typeof init?.body === 'string') {
+      bodyText = init.body;
+      try {
+        bodyJson = JSON.parse(init.body) as Record<string, unknown>;
+      } catch {
+        // Body was not JSON
+      }
+    }
+
+    capturedRequests.push({ url, method, formData, bodyText, bodyJson });
 
     return new Response(JSON.stringify({ ok: responseStatus === 200 }), {
       status: responseStatus,
@@ -345,5 +359,361 @@ describe('SendGrid Inbound Telegram Webhook', () => {
   it('formats archive filenames using 24-hour UTC timestamps', () => {
     const sampleDate = new Date('2026-12-31T23:59:08.000Z');
     expect(formatArchiveFilename(sampleDate)).toBe('sendgrid_20261231235908.eml');
+  });
+
+  it('renders a landing page containing the webhook registration button and status container', async () => {
+    const app = createInboundWebhookApp();
+    const response = await app.request('/');
+    expect(response.status).toBe(200);
+
+    const htmlContent = await response.text();
+    expect(htmlContent).toContain('id="register-webhook-button"');
+    expect(htmlContent).toContain('id="webhook-feedback"');
+    expect(htmlContent).toContain('Register Webhook');
+    expect(htmlContent).toContain('/api/register-webhook');
+  });
+
+  it('registers webhook with Telegram using the URL provided in the request body', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const registrationRequest = new Request('http://localhost/api/register-webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.org/api/telegram' }),
+    });
+
+    const response = await app.request(registrationRequest);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      message: 'Webhook registered successfully.',
+      url: 'https://example.org/api/telegram',
+    });
+
+    expect(capturedRequests).toHaveLength(1);
+    const captured = capturedRequests[0];
+    expect(captured?.url).toBe(
+      'https://api.telegram.org/bot000000000:TEST_BOT_TOKEN_PLACEHOLDER/setWebhook',
+    );
+    expect(captured?.method).toBe('POST');
+    expect(captured?.bodyJson).toEqual({ url: 'https://example.org/api/telegram' });
+  });
+
+  it('rejects webhook registration when bot token is not configured with HTTP 500', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {},
+      fetchImplementation: fetchStub,
+    });
+
+    const request = new Request('http://localhost/api/register-webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.org/api/telegram' }),
+    });
+
+    const response = await app.request(request);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      ok: false,
+      message: 'Telegram bot token is not configured.',
+    });
+    expect(capturedRequests).toHaveLength(0);
+  });
+
+  it('rejects webhook registration with invalid URL with HTTP 400', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const request = new Request('http://localhost/api/register-webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'not-a-valid-url' }),
+    });
+
+    const response = await app.request(request);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      ok: false,
+      message: 'Invalid webhook URL.',
+    });
+    expect(capturedRequests).toHaveLength(0);
+  });
+
+  it('returns HTTP 502 when Telegram setWebhook API rejects registration', async () => {
+    const { fetchStub } = createFakeTelegramFetch(400);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const request = new Request('http://localhost/api/register-webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.org/api/telegram' }),
+    });
+
+    const response = await app.request(request);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      ok: false,
+      message: 'Failed to register webhook with Telegram.',
+    });
+  });
+
+  it('handles /start, /help, and /hello bot commands and replies with appropriate text', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const testCases = [
+      {
+        command: '/start',
+        expectedTextFragment: 'SendGrid Inbound Bot is active and ready',
+      },
+      {
+        command: '/help',
+        expectedTextFragment: 'Available commands:',
+      },
+      {
+        command: '/hello',
+        expectedTextFragment: 'Hello! The bot is operational.',
+      },
+    ];
+
+    for (const [index, testCase] of testCases.entries()) {
+      const updatePayload = {
+        update_id: 1000 + index,
+        message: {
+          message_id: 200 + index,
+          from: { id: 123456, is_bot: false, first_name: 'Tester' },
+          chat: { id: 123456, type: 'private' },
+          date: 1700000000 + index,
+          text: testCase.command,
+        },
+      };
+
+      const request = new Request('http://localhost/api/telegram', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      });
+
+      const response = await app.request(request);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    }
+
+    expect(capturedRequests).toHaveLength(3);
+
+    for (const [index, testCase] of testCases.entries()) {
+      const captured = capturedRequests[index];
+      expect(captured?.url).toBe(
+        'https://api.telegram.org/bot000000000:TEST_BOT_TOKEN_PLACEHOLDER/sendMessage',
+      );
+      expect(captured?.method).toBe('POST');
+      expect(captured?.bodyJson?.chat_id).toBe(123456);
+      expect(typeof captured?.bodyJson?.text).toBe('string');
+      expect(captured?.bodyJson?.text as string).toContain(testCase.expectedTextFragment);
+    }
+  });
+
+  it('handles bot commands case-insensitively, with bot username mentions, and with trailing arguments', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const commandVariations = [
+      '/START',
+      '/start@TestInboundBot',
+      '/help additional parameters',
+      '/HELLO @friend',
+    ];
+
+    for (const [index, commandText] of commandVariations.entries()) {
+      const updatePayload = {
+        update_id: 2000 + index,
+        message: {
+          message_id: 300 + index,
+          from: { id: 789012, is_bot: false, first_name: 'Tester' },
+          chat: { id: 789012, type: 'private' },
+          date: 1700000000 + index,
+          text: commandText,
+        },
+      };
+
+      const request = new Request('http://localhost/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      });
+
+      const response = await app.request(request);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    }
+
+    expect(capturedRequests).toHaveLength(4);
+    expect(capturedRequests[0]?.bodyJson?.text).toContain('SendGrid Inbound Bot is active and ready');
+    expect(capturedRequests[1]?.bodyJson?.text).toContain('SendGrid Inbound Bot is active and ready');
+    expect(capturedRequests[2]?.bodyJson?.text).toContain('Available commands:');
+    expect(capturedRequests[3]?.bodyJson?.text).toContain('Hello! The bot is operational.');
+  });
+
+  it('gracefully acknowledges non-command messages and unknown commands with HTTP 200 without sending messages', async () => {
+    const { fetchStub, capturedRequests } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const ignoredPayloads = [
+      {
+        update_id: 3001,
+        message: {
+          message_id: 401,
+          chat: { id: 123456, type: 'private' },
+          date: 1700000000,
+          text: 'Regular conversational message',
+        },
+      },
+      {
+        update_id: 3002,
+        message: {
+          message_id: 402,
+          chat: { id: 123456, type: 'private' },
+          date: 1700000001,
+          text: '/unknown_command',
+        },
+      },
+      {
+        update_id: 3003,
+      },
+    ];
+
+    for (const payload of ignoredPayloads) {
+      const response = await app.request(
+        new Request('http://localhost/api/telegram', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    }
+
+    expect(capturedRequests).toHaveLength(0);
+  });
+
+  it('returns HTTP 400 for malformed Telegram update payloads', async () => {
+    const { fetchStub } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const nonJsonRequest = new Request('http://localhost/api/telegram', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'invalid-json',
+    });
+    const nonJsonResponse = await app.request(nonJsonRequest);
+    expect(nonJsonResponse.status).toBe(400);
+
+    const missingUpdateIdRequest = new Request('http://localhost/api/telegram', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ foo: 'bar' }),
+    });
+    const missingUpdateIdResponse = await app.request(missingUpdateIdRequest);
+    expect(missingUpdateIdResponse.status).toBe(400);
+    expect(await missingUpdateIdResponse.json()).toEqual({
+      message: 'Incorrect parameters.',
+    });
+  });
+
+  it('returns HTTP 500 when bot token is not configured during command processing', async () => {
+    const { fetchStub } = createFakeTelegramFetch(200);
+    const app = createInboundWebhookApp({
+      environment: {},
+      fetchImplementation: fetchStub,
+    });
+
+    const request = new Request('http://localhost/api/telegram', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        update_id: 4001,
+        message: {
+          message_id: 501,
+          chat: { id: 123456, type: 'private' },
+          date: 1700000000,
+          text: '/start',
+        },
+      }),
+    });
+
+    const response = await app.request(request);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      message: 'Telegram bot token is not configured.',
+    });
+  });
+
+  it('returns HTTP 502 when upstream Telegram sendMessage fails', async () => {
+    const { fetchStub } = createFakeTelegramFetch(500);
+    const app = createInboundWebhookApp({
+      environment: {
+        BOT_TOKEN: '000000000:TEST_BOT_TOKEN_PLACEHOLDER',
+      },
+      fetchImplementation: fetchStub,
+    });
+
+    const request = new Request('http://localhost/api/telegram', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        update_id: 5001,
+        message: {
+          message_id: 601,
+          chat: { id: 123456, type: 'private' },
+          date: 1700000000,
+          text: '/hello',
+        },
+      }),
+    });
+
+    const response = await app.request(request);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      message: 'Failed to deliver message to Telegram.',
+    });
   });
 });
