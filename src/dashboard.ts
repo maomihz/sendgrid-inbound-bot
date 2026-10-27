@@ -148,11 +148,7 @@ export function renderServiceLandingPageHtml(): string {
         feedbackElement.textContent = 'Registering webhook...';
 
         try {
-          const response = await fetch('/api/register-webhook', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: window.location.href }),
-          });
+          const response = await fetch('/api/register-webhook', { method: 'POST' });
 
           const result = await response.json();
           if (response.ok && result.ok) {

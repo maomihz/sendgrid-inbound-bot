@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type {
   InboundEmailPayload,
   TelegramBotToken,
@@ -114,52 +115,31 @@ export const TELEGRAM_BOT_COMMAND_RESPONSES = {
   HELLO: 'Hello! The bot is operational.',
 } as const;
 
-export function resolveBotCommandResponse(rawText: string): string | null {
-  const trimmedText = rawText.trim();
-  if (!trimmedText.startsWith('/')) {
-    return null;
-  }
-
-  const firstWhitespaceIndex = trimmedText.search(/\s/);
-  const commandWithOptionalMention =
-    firstWhitespaceIndex === -1
-      ? trimmedText
-      : trimmedText.slice(0, firstWhitespaceIndex);
-
-  const commandWithoutMention = commandWithOptionalMention.split('@')[0] ?? '';
-  const normalizedCommand = commandWithoutMention.toLowerCase();
+export function resolveBotCommandResponse(
+  rawText: string,
+  senderName?: string,
+): string | null {
+  const commandToken = rawText.trim().split(/\s+/)[0] ?? '';
+  const normalizedCommand = (commandToken.split('@')[0] ?? '').toLowerCase();
 
   switch (normalizedCommand) {
     case '/start':
       return TELEGRAM_BOT_COMMAND_RESPONSES.START;
     case '/help':
       return TELEGRAM_BOT_COMMAND_RESPONSES.HELP;
-    case '/hello':
-      return TELEGRAM_BOT_COMMAND_RESPONSES.HELLO;
+    case '/hello': {
+      const trimmedSender = senderName?.trim();
+      return trimmedSender && trimmedSender.length > 0
+        ? `Hello, ${trimmedSender}! The bot is operational.`
+        : TELEGRAM_BOT_COMMAND_RESPONSES.HELLO;
+    }
     default:
       return null;
   }
 }
 
-export function parseWebhookUrl(candidateUrl: unknown): string | null {
-  if (typeof candidateUrl !== 'string') {
-    return null;
-  }
-
-  const trimmedUrl = candidateUrl.trim();
-  if (trimmedUrl.length === 0) {
-    return null;
-  }
-
-  try {
-    const parsedUrl = new URL(trimmedUrl);
-    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-      return null;
-    }
-    return parsedUrl.href;
-  } catch {
-    return null;
-  }
+export function deriveTelegramSecretToken(botToken: TelegramBotToken): string {
+  return createHmac('sha256', botToken).update('telegram-webhook').digest('hex');
 }
 
 export async function registerTelegramWebhook(options: {
@@ -173,15 +153,12 @@ export async function registerTelegramWebhook(options: {
     const response = await options.fetchImplementation(endpointUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: options.webhookUrl }),
+      body: JSON.stringify({
+        url: options.webhookUrl,
+        secret_token: deriveTelegramSecretToken(options.botToken),
+      }),
     });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const payload = (await response.json()) as { ok?: boolean };
-    return payload.ok === true;
+    return response.ok;
   } catch {
     return false;
   }
@@ -189,7 +166,7 @@ export async function registerTelegramWebhook(options: {
 
 export async function sendTelegramTextMessage(options: {
   readonly botToken: TelegramBotToken;
-  readonly chatId: TelegramChatId | string | number;
+  readonly chatId: number | string;
   readonly text: string;
   readonly fetchImplementation: typeof fetch;
 }): Promise<boolean> {
@@ -204,13 +181,7 @@ export async function sendTelegramTextMessage(options: {
         text: options.text,
       }),
     });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const payload = (await response.json()) as { ok?: boolean };
-    return payload.ok === true;
+    return response.ok;
   } catch {
     return false;
   }

@@ -8,8 +8,8 @@ import {
 } from './inbound-parser.js';
 import {
   deliverEmailDocumentToTelegram,
+  deriveTelegramSecretToken,
   formatArchiveFilename,
-  parseWebhookUrl,
   registerTelegramWebhook,
   resolveBotCommandResponse,
   sendTelegramTextMessage,
@@ -91,34 +91,10 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
       );
     }
 
-    let candidateUrl: string | undefined;
-    try {
-      const parsedBody: unknown = await context.req.json();
-      if (
-        typeof parsedBody === 'object' &&
-        parsedBody !== null &&
-        'url' in parsedBody &&
-        typeof (parsedBody as { url: unknown }).url === 'string'
-      ) {
-        candidateUrl = (parsedBody as { url: string }).url;
-      }
-    } catch {
-      // Body may not be JSON
-    }
-
-    if (!candidateUrl) {
-      candidateUrl = context.req.query('url');
-    }
-
-    const targetUrl = candidateUrl ?? context.req.url;
-    const resolvedWebhookUrl = parseWebhookUrl(targetUrl);
-    if (resolvedWebhookUrl === null) {
-      return context.json({ ok: false, message: 'Invalid webhook URL.' }, 400);
-    }
-
+    const webhookUrl = new URL('/api/telegram', context.req.url).href;
     const isRegistered = await registerTelegramWebhook({
       botToken,
-      webhookUrl: resolvedWebhookUrl,
+      webhookUrl,
       fetchImplementation,
     });
 
@@ -133,34 +109,13 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
       {
         ok: true,
         message: 'Webhook registered successfully.',
-        url: resolvedWebhookUrl,
+        url: webhookUrl,
       },
       200,
     );
   };
 
   const handleTelegramWebhook = async (context: Context): Promise<Response> => {
-    let update: TelegramUpdate;
-    try {
-      update = (await context.req.json()) as TelegramUpdate;
-    } catch {
-      return context.json({ message: 'Invalid JSON payload.' }, 400);
-    }
-
-    if (!update || typeof update !== 'object' || typeof update.update_id !== 'number') {
-      return context.json({ message: 'Incorrect parameters.' }, 400);
-    }
-
-    const message = update.message ?? update.channel_post ?? update.edited_message;
-    if (!message || typeof message.text !== 'string' || !message.chat) {
-      return context.json({ ok: true }, 200);
-    }
-
-    const commandResponseText = resolveBotCommandResponse(message.text);
-    if (commandResponseText === null) {
-      return context.json({ ok: true }, 200);
-    }
-
     const environment = resolveEnvironment();
     const botToken = parseTelegramBotToken(environment.BOT_TOKEN);
     if (botToken === null) {
@@ -170,9 +125,42 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
       );
     }
 
+    const secretHeader = context.req.header('x-telegram-bot-api-secret-token');
+    if (secretHeader !== deriveTelegramSecretToken(botToken)) {
+      return context.json({ message: 'Unauthorized webhook request.' }, 401);
+    }
+
+    let update: TelegramUpdate;
+    try {
+      update = (await context.req.json()) as TelegramUpdate;
+    } catch {
+      return context.json({ message: 'Invalid JSON payload.' }, 400);
+    }
+
+    if (typeof update?.update_id !== 'number') {
+      return context.json({ message: 'Incorrect parameters.' }, 400);
+    }
+
+    const messageText = update.message?.text;
+    const chatId = update.message?.chat?.id;
+    if (
+      typeof messageText !== 'string' ||
+      (typeof chatId !== 'number' && typeof chatId !== 'string')
+    ) {
+      return context.json({ ok: true }, 200);
+    }
+
+    const senderName =
+      update.message?.from?.first_name?.trim() ||
+      update.message?.from?.username?.trim();
+    const commandResponseText = resolveBotCommandResponse(messageText, senderName);
+    if (commandResponseText === null) {
+      return context.json({ ok: true }, 200);
+    }
+
     const isSent = await sendTelegramTextMessage({
       botToken,
-      chatId: message.chat.id,
+      chatId,
       text: commandResponseText,
       fetchImplementation,
     });
@@ -210,13 +198,8 @@ export function createInboundWebhookApp(dependencies: WebhookAppDependencies = {
   application.post('/api/inbound', handleInboundWebhook);
   application.post('/api/inbound/:chat_id', handleInboundWebhook);
 
-  application.post('/', handleTelegramWebhook);
-  application.post('/api', handleTelegramWebhook);
   application.post('/api/telegram', handleTelegramWebhook);
-  application.post('/api/webhook', handleTelegramWebhook);
-
   application.post('/api/register-webhook', handleRegisterWebhook);
-  application.post('/api/telegram/register', handleRegisterWebhook);
 
   return application;
 }
